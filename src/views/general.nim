@@ -5,12 +5,15 @@ import renderutils
 import ../utils, ../types, ../prefs, ../formatters
 
 import jester
+import os
 
 const
+  nlaHideNavbar = existsEnv("NLA_HIDE_NAVBAR")
   doctype = "<!DOCTYPE html>\n"
   lp = readFile("public/lp.svg")
 
 proc renderNavbar*(title, rss: string; req: Request): VNode =
+  if nlaHideNavbar and req.path != "/": return
   let twitterPath = getTwitterLink(req.path, req.params)
   var path = $(parseUri(req.path) ? filterParams(req.params))
   if "/status" in path: path.add "#m"

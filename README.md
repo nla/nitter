@@ -1,7 +1,17 @@
-# Nitter
+# Nitter (with tweaks for web archiving)
 
 [![Test Matrix](https://github.com/zedeus/nitter/workflows/CI/CD/badge.svg)](https://github.com/zedeus/nitter/actions?query=workflow%3ACI/CD)
 [![License](https://img.shields.io/github/license/zedeus/nitter?style=flat)](#license)
+
+---
+
+This is a fork of Nitter with some tweaks for web archiving. These tweaks can be 
+enabled by setting the following environment variables:
+
+- NLA_HIDE_NAVBAR - Omits the top navigation bar everywhere except the home page
+- NLA_ABSOLUTE_TIMES - Renders all times absolute instead of relative (5m ago)
+
+---
 
 A free and open source alternative Twitter front-end focused on privacy. \
 Inspired by the [Invidious](https://github.com/iv-org/invidious) project.

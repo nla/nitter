@@ -12,7 +12,9 @@ const
   lp = readFile("public/lp.svg")
 
 proc renderNavbar*(title, rss: string; req: Request): VNode =
-  if os.existsEnv("NLA_HIDE_NAVBAR") and req.path != "/": return
+  if os.existsEnv("NLA_HIDE_NAVBAR") and req.path != "/":
+    return buildHtml(span):
+      text ""
   let twitterPath = getTwitterLink(req.path, req.params)
   var path = $(parseUri(req.path) ? filterParams(req.params))
   if "/status" in path: path.add "#m"

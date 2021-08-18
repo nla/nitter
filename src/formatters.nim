@@ -4,7 +4,6 @@ import types, utils, query
 import os
 
 const
-  nlaAbsoluteTimes = os.existsEnv("NLA_ABSOLUTE_TIMES")
   ytRegex = re"([A-z.]+\.)?youtu(be\.com|\.be)"
   twRegex = re"(www\.|mobile\.)?twitter\.com"
   igRegex = re"(www\.)?instagram.com"
@@ -105,7 +104,7 @@ proc getTweetTime*(tweet: Tweet): string =
   tweet.time.format("h:mm tt' · 'MMM d', 'YYYY")
 
 proc getShortTime*(tweet: Tweet): string =
-  if nlaAbsoluteTimes: return getTime(tweet)
+  if os.existsEnv("NLA_ABSOLUTE_TIMES"): return getTime(tweet)
   let now = now()
   var then = tweet.time.local()
   then.utcOffset = 0

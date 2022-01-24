@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import strutils
 import karax/[karaxdsl, vdom, vstyles]
 import ".."/[types, utils]
@@ -14,23 +15,23 @@ proc icon*(icon: string; text=""; title=""; class=""; href=""): VNode =
     if text.len > 0:
       text " " & text
 
-proc linkUser*(profile: Profile, class=""): VNode =
+proc linkUser*(user: User, class=""): VNode =
   let
     isName = "username" notin class
-    href = "/" & profile.username
-    nameText = if isName: profile.fullname
-               else: "@" & profile.username
+    href = "/" & user.username
+    nameText = if isName: user.fullname
+               else: "@" & user.username
 
   buildHtml(a(href=href, class=class, title=nameText)):
     text nameText
-    if isName and profile.verified:
+    if isName and user.verified:
       icon "ok", class="verified-icon", title="Verified account"
-    if isName and profile.protected:
+    if isName and user.protected:
       text " "
       icon "lock", title="Protected account"
 
 proc linkText*(text: string; class=""): VNode =
-  let url = if "http" notin text: "http://" & text else: text
+  let url = if "http" notin text: https & text else: text
   buildHtml():
     a(href=url, class=class): text text
 
@@ -40,12 +41,6 @@ proc hiddenField*(name, value: string): VNode =
 
 proc refererField*(path: string): VNode =
   hiddenField("referer", path)
-
-proc iconReferer*(icon, action, path: string, title=""): VNode =
-  buildHtml(form(`method`="get", action=action, class="icon-button")):
-    refererField path
-    button(`type`="submit"):
-      icon icon, title=title
 
 proc buttonReferer*(action, text, path: string; class=""; `method`="post"): VNode =
   buildHtml(form(`method`=`method`, action=action, class=class)):
@@ -93,3 +88,9 @@ proc getTabClass*(query: Query; tab: QueryKind): string =
   result = "tab-item"
   if query.kind == tab:
     result &= " active"
+
+proc getAvatarClass*(prefs: Prefs): string =
+  if prefs.squareAvatars:
+    "avatar"
+  else:
+    "avatar round"

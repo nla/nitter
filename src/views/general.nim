@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import uri, strutils, strformat
 import karax/[karaxdsl, vdom]
 
@@ -11,33 +12,41 @@ const
   doctype = "<!DOCTYPE html>\n"
   lp = readFile("public/lp.svg")
 
-proc renderNavbar*(title, rss: string; req: Request): VNode =
+proc toTheme(theme: string): string =
+  theme.toLowerAscii.replace(" ", "_")
+
+proc renderNavbar(cfg: Config; req: Request; rss, canonical: string): VNode =
   if os.existsEnv("NLA_HIDE_NAVBAR") and req.path != "/":
     return buildHtml(span):
       text ""
-  let twitterPath = getTwitterLink(req.path, req.params)
-  var path = $(parseUri(req.path) ? filterParams(req.params))
-  if "/status" in path: path.add "#m"
+  var path = req.params.getOrDefault("referer")
+  if path.len == 0:
+    path = $(parseUri(req.path) ? filterParams(req.params))
+    if "/status/" in path: path.add "#m"
 
   buildHtml(nav):
     tdiv(class="inner-nav"):
       tdiv(class="nav-item"):
-        a(class="site-name", href="/"): text title
+        a(class="site-name", href="/"): text cfg.title
 
-      a(href="/"): img(class="site-logo", src="/logo.png")
+      a(href="/"): img(class="site-logo", src="/logo.png", alt="Logo")
 
       tdiv(class="nav-item right"):
         icon "search", title="Search", href="/search"
-        if rss.len > 0:
+        if cfg.enableRss and rss.len > 0:
           icon "rss-feed", title="RSS Feed", href=rss
-        icon "bird", title="Open in Twitter", href=twitterPath
+        icon "bird", title="Open in Twitter", href=canonical
         a(href="https://liberapay.com/zedeus"): verbatim lp
         icon "info", title="About", href="/about"
-        iconReferer "cog", "/settings", path, title="Preferences"
+        icon "cog", title="Preferences", href=("/settings?referer=" & encodeUrl(path))
 
-proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
-                 images: seq[string] = @[]; banner=""; ogTitle=""; theme="";
-                 rss=""): VNode =
+proc renderHead*(prefs: Prefs; cfg: Config; req: Request; titleText=""; desc="";
+                 video=""; images: seq[string] = @[]; banner=""; ogTitle="";
+                 rss=""; canonical=""): VNode =
+  var theme = prefs.theme.toTheme
+  if "theme" in req.params:
+    theme = req.params["theme"].toTheme
+    
   let ogType =
     if video.len > 0: "video"
     elif rss.len > 0: "object"
@@ -47,7 +56,7 @@ proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
   let opensearchUrl = getUrlPrefix(cfg) & "/opensearch"
 
   buildHtml(head):
-    link(rel="stylesheet", type="text/css", href="/css/style.css?v=3")
+    link(rel="stylesheet", type="text/css", href="/css/style.css?v=15")
     link(rel="stylesheet", type="text/css", href="/css/fontello.css?v=2")
 
     if theme.len > 0:
@@ -61,7 +70,10 @@ proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
     link(rel="search", type="application/opensearchdescription+xml", title=cfg.title,
                             href=opensearchUrl)
 
-    if rss.len > 0:
+    if canonical.len > 0:
+      link(rel="canonical", href=canonical)
+
+    if cfg.enableRss and rss.len > 0:
       link(rel="alternate", type="application/rss+xml", href=rss, title="RSS feed")
 
     if prefs.hlsPlayback:
@@ -78,6 +90,7 @@ proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
         text cfg.title
 
     meta(name="viewport", content="width=device-width, initial-scale=1.0")
+    meta(name="theme-color", content="#1F1F1F")
     meta(property="og:type", content=ogType)
     meta(property="og:title", content=(if ogTitle.len > 0: ogTitle else: titleText))
     meta(property="og:description", content=stripHtml(desc))
@@ -86,10 +99,11 @@ proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
 
     if banner.len > 0:
       let bannerUrl = getPicUrl(banner)
-      link(rel="preload", type="image/png", href=getPicUrl(banner), `as`="image")
+      link(rel="preload", type="image/png", href=bannerUrl, `as`="image")
 
     for url in images:
-      let suffix = if "400x400" in url: "" else: "?name=small"
+      let suffix = if "400x400" in url or url.endsWith("placeholder.png"): ""
+                   else: "?name=small"
       let preloadUrl = getPicUrl(url & suffix)
       link(rel="preload", type="image/png", href=preloadUrl, `as`="image")
 
@@ -115,15 +129,15 @@ proc renderHead*(prefs: Prefs; cfg: Config; titleText=""; desc=""; video="";
 proc renderMain*(body: VNode; req: Request; cfg: Config; prefs=defaultPrefs;
                  titleText=""; desc=""; ogTitle=""; rss=""; video="";
                  images: seq[string] = @[]; banner=""): string =
-  var theme = toLowerAscii(prefs.theme).replace(" ", "_")
-  if "theme" in req.params:
-    theme = toLowerAscii(req.params["theme"]).replace(" ", "_")
+
+  let canonical = getTwitterLink(req.path, req.params)
 
   let node = buildHtml(html(lang="en")):
-    renderHead(prefs, cfg, titleText, desc, video, images, banner, ogTitle, theme, rss)
+    renderHead(prefs, cfg, req, titleText, desc, video, images, banner, ogTitle,
+               rss, canonical)
 
     body:
-      renderNavbar(cfg.title, rss, req)
+      renderNavbar(cfg, req, rss, canonical)
 
       tdiv(class="container"):
         body

@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import strutils, uri, os, algorithm
 
 import jester
 
 import router_utils
-import ".."/[types]
+import ".."/[types, formatters]
 import ../views/[general, preferences]
 
 export preferences
@@ -11,7 +12,7 @@ export preferences
 proc findThemes*(dir: string): seq[string] =
   for kind, path in walkDir(dir / "css" / "themes"):
     let theme = path.splitFile.name
-    result.add theme.capitalizeAscii.replace("_", " ")
+    result.add theme.replace("_", " ").titleize
   sort(result)
 
 proc createPrefRouter*(cfg: Config) =
@@ -31,7 +32,7 @@ proc createPrefRouter*(cfg: Config) =
 
     post "/resetprefs":
       genResetPrefs()
-      redirect($(parseUri("/settings") ? filterParams(request.params)))
+      redirect("/settings?referer=" & encodeUrl(refPath()))
 
     post "/enablehls":
       savePref("hlsPlayback", "on", request)

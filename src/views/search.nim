@@ -1,4 +1,5 @@
-import strutils, strformat, sequtils, unicode, tables
+# SPDX-License-Identifier: AGPL-3.0-only
+import strutils, strformat, sequtils, unicode, tables, options
 import karax/[karaxdsl, vdom]
 
 import renderutils, timeline
@@ -87,7 +88,8 @@ proc renderSearchPanel*(query: Query): VNode =
           span(class="search-title"): text "Near"
           genInput("near", "", query.near, placeholder="Location...")
 
-proc renderTweetSearch*(results: Result[Tweet]; prefs: Prefs; path: string): VNode =
+proc renderTweetSearch*(results: Result[Tweet]; prefs: Prefs; path: string;
+                        pinned=none(Tweet)): VNode =
   let query = results.query
   buildHtml(tdiv(class="timeline-container")):
     if query.fromUser.len > 1:
@@ -104,9 +106,9 @@ proc renderTweetSearch*(results: Result[Tweet]; prefs: Prefs; path: string): VNo
     if query.fromUser.len == 0:
       renderSearchTabs(query)
 
-    renderTimelineTweets(results, prefs, path)
+    renderTimelineTweets(results, prefs, path, pinned)
 
-proc renderUserSearch*(results: Result[Profile]; prefs: Prefs): VNode =
+proc renderUserSearch*(results: Result[User]; prefs: Prefs): VNode =
   buildHtml(tdiv(class="timeline-container")):
     tdiv(class="timeline-header"):
       form(`method`="get", action="/search", class="search-field"):

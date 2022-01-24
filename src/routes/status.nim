@@ -1,4 +1,5 @@
-import asyncdispatch, strutils, sequtils, uri, options
+# SPDX-License-Identifier: AGPL-3.0-only
+import asyncdispatch, strutils, sequtils, uri, options, sugar
 
 import jester, karax/vdom
 
@@ -6,7 +7,7 @@ import router_utils
 import ".."/[types, formatters, api]
 import ../views/[general, status]
 
-export uri, sequtils, options
+export uri, sequtils, options, sugar
 export router_utils
 export api, formatters
 export status
@@ -15,8 +16,10 @@ proc createStatusRouter*(cfg: Config) =
   router status:
     get "/@name/status/@id/?":
       cond '.' notin @"name"
+      cond not @"id".any(c => not c.isDigit)
       let prefs = cookiePrefs()
 
+      # used for the infinite scroll feature
       if @"scroll".len > 0:
         let replies = await getReplies(@"id", getCursor())
         if replies.content.len == 0:
@@ -33,10 +36,12 @@ proc createStatusRouter*(cfg: Config) =
           error = conv.tweet.tombstone
         resp Http404, showError(error, cfg)
 
-      var
+      let
         title = pageTitle(conv.tweet)
-        ogTitle = pageTitle(conv.tweet.profile)
+        ogTitle = pageTitle(conv.tweet.user)
         desc = conv.tweet.text
+
+      var
         images = conv.tweet.photos
         video = ""
 

@@ -13,8 +13,10 @@ enabled by setting the following environment variables:
 
 ---
 
-A free and open source alternative Twitter front-end focused on privacy. \
-Inspired by the [Invidious](https://github.com/iv-org/invidious) project.
+A free and open source alternative Twitter front-end focused on privacy and
+performance. \
+Inspired by the [Invidious](https://github.com/iv-org/invidious)
+project.
 
 - No JavaScript or ads
 - All requests go through the backend, client never talks to Twitter
@@ -49,12 +51,14 @@ maintained by the community.
 
 ## Why?
 
-It's basically impossible to use Twitter without JavaScript enabled. If you try,
-you're redirected to the legacy mobile version which is awful both functionally
-and aesthetically. For privacy-minded folks, preventing JavaScript analytics and
-potential IP-based tracking is important, but apart from using the legacy mobile
-version and a VPN, it's impossible. This is is especially relevant now that Twitter
-[removed the ability](https://www.eff.org/deeplinks/2020/04/twitter-removes-privacy-option-and-shows-why-we-need-strong-privacy-laws)
+It's impossible to use Twitter without JavaScript enabled. For privacy-minded
+folks, preventing JavaScript analytics and IP-based tracking is important, but
+apart from using a VPN and uBlock/uMatrix, it's impossible. Despite being behind
+a VPN and using heavy-duty adblockers, you can get accurately tracked with your
+[browser's fingerprint](https://restoreprivacy.com/browser-fingerprinting/),
+[no JavaScript required](https://noscriptfingerprint.com/). This all became
+particularly important after Twitter [removed the
+ability](https://www.eff.org/deeplinks/2020/04/twitter-removes-privacy-option-and-shows-why-we-need-strong-privacy-laws)
 for users to control whether their data gets sent to advertisers.
 
 Using an instance of Nitter (hosted on a VPS for example), you can browse
@@ -72,6 +76,11 @@ Twitter account.
 
 ## Installation
 
+### Dependencies
+* libpcre
+* libsass
+* redis
+
 To compile Nitter you need a Nim installation, see
 [nim-lang.org](https://nim-lang.org/install.html) for details. It is possible to
 install it system-wide or in the user directory you create below.
@@ -85,7 +94,7 @@ Running it with the default config is fine, Nitter's default config is set to
 use the default Redis port and localhost.
 
 Here's how to create a `nitter` user, clone the repo, and build the project
-along with the scss.
+along with the scss and md files.
 
 ```bash
 # useradd -m nitter
@@ -94,7 +103,8 @@ $ git clone https://github.com/zedeus/nitter
 $ cd nitter
 $ nimble build -d:release
 $ nimble scss
-$ mkdir ./tmp
+$ nimble md
+$ cp nitter.example.conf nitter.conf
 ```
 
 Set your hostname, port, HMAC key, https (must be correct for cookies), and
@@ -102,21 +112,39 @@ Redis info in `nitter.conf`. To run Redis, either run
 `redis-server --daemonize yes`, or `systemctl enable --now redis` (or
 redis-server depending on the distro). Run Nitter by executing `./nitter` or
 using the systemd service below. You should run Nitter behind a reverse proxy
-such as [Nginx](https://github.com/zedeus/nitter/wiki/Nginx) or Apache for
-security reasons.
+such as [Nginx](https://github.com/zedeus/nitter/wiki/Nginx) or
+[Apache](https://github.com/zedeus/nitter/wiki/Apache) for security and
+performance reasons.
+
+### Docker
+
+#### NOTE: For ARM64/ARM support, please use [unixfox's image](https://quay.io/repository/unixfox/nitter?tab=tags), more info [here](https://github.com/zedeus/nitter/issues/399#issuecomment-997263495)
+
+To run Nitter with Docker, you'll need to install and run Redis separately
+before you can run the container. See below for how to also run Redis using
+Docker.
 
 To build and run Nitter in Docker:
 ```bash
 docker build -t nitter:latest .
-docker run -v $(pwd)/nitter.conf:/src/nitter.conf -d -p 8080:8080 nitter:latest
+docker run -v $(pwd)/nitter.conf:/src/nitter.conf -d --network host nitter:latest
 ```
 
 A prebuilt Docker image is provided as well:
 ```bash
-docker run -v $(pwd)/nitter.conf:/src/nitter.conf -d -p 8080:8080 zedeus/nitter:latest
+docker run -v $(pwd)/nitter.conf:/src/nitter.conf -d --network host zedeus/nitter:latest
 ```
 
-Note the Docker commands expect a `nitter.conf` file in the directory you run them.
+Using docker-compose to run both Nitter and Redis as different containers:
+Change `redisHost` from `localhost` to `redis` in `nitter.conf`, then run:
+```bash
+docker-compose up -d
+```
+
+Note the Docker commands expect a `nitter.conf` file in the directory you run
+them.
+
+### systemd
 
 To run Nitter via systemd you can use this service file:
 
@@ -146,6 +174,8 @@ WantedBy=multi-user.target
 
 Then enable and run the service:
 `systemctl enable --now nitter.service`
+
+### Logging
 
 Nitter currently prints some errors to stdout, and there is no real logging
 implemented. If you're running Nitter with systemd, you can check stdout like

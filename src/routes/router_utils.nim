@@ -1,14 +1,15 @@
-import strutils, sequtils, uri, tables
+# SPDX-License-Identifier: AGPL-3.0-only
+import strutils, sequtils, uri, tables, json
 from jester import Request, cookies
 
 import ../views/general
 import ".."/[utils, prefs, types]
-export utils, prefs, types
+export utils, prefs, types, uri
 
 template savePref*(pref, value: string; req: Request; expire=false) =
   if not expire or pref in cookies(req):
     setCookie(pref, value, daysForward(when expire: -10 else: 360),
-              httpOnly=true, secure=cfg.useHttps)
+              httpOnly=true, secure=cfg.useHttps, sameSite=None)
 
 template cookiePrefs*(): untyped {.dirty.} =
   getPrefs(cookies(request))
@@ -41,3 +42,6 @@ template getCursor*(req: Request): string =
 
 proc getNames*(name: string): seq[string] =
   name.strip(chars={'/'}).split(",").filterIt(it.len > 0)
+
+template respJson*(node: JsonNode) =
+  resp $node, "application/json"

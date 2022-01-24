@@ -15,21 +15,20 @@
 }
 
 .profile-banner {
-    padding-bottom: 4px;
+    margin-bottom: 4px;
+    background-color: var(--bg_panel);
 
     a {
-        display: inherit;
-        line-height: 0;
+        display: block;
+        position: relative;
+        padding: 33.34% 0 0 0;
     }
 
     img {
-        width: 100%;
+        max-width: 100%;
+        position: absolute;
+        top: 0;
     }
-}
-
-.profile-banner-color {
-    width: 100%;
-    padding-bottom: 25%;
 }
 
 .profile-tab {
@@ -51,9 +50,10 @@
     margin-bottom: unset;
 }
 
-@media(max-width: 600px) {
+@media(max-width: 700px) {
     .profile-tabs {
         width: 100vw;
+        max-width: 600px;
 
         .timeline-container {
             width: 100% !important;
@@ -69,5 +69,11 @@
         max-width: unset;
         position: initial !important;
         padding: 0;
+    }
+}
+
+@media (min-height: 900px) {
+    .profile-tab.sticky {
+        position: sticky;
     }
 }

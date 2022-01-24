@@ -1,8 +1,10 @@
-import strutils, times, macros, htmlgen, unicode, options, algorithm
-import regex, packedjson
+# SPDX-License-Identifier: AGPL-3.0-only
+import std/[strutils, times, macros, htmlgen, options, algorithm, re]
+import std/unicode except strip
+import packedjson
 import types, utils, formatters
 
-const
+let
   unRegex = re"(^|[^A-z0-9-_./?])@([A-z0-9_]{1,15})"
   unReplace = "$1<a href=\"/$2\">@$2</a>"
 
@@ -43,14 +45,14 @@ template getError*(js: JsonNode): Error =
   if js.kind != JArray or js.len == 0: null
   else: Error(js[0]{"code"}.getInt)
 
-template parseTime(time: string; f: static string; flen: int): Time =
+template parseTime(time: string; f: static string; flen: int): DateTime =
   if time.len != flen: return
-  parse(time, f).toTime
+  parse(time, f, utc())
 
-proc getDateTime*(js: JsonNode): Time =
+proc getDateTime*(js: JsonNode): DateTime =
   parseTime(js.getStr, "yyyy-MM-dd\'T\'HH:mm:ss\'Z\'", 20)
 
-proc getTime*(js: JsonNode): Time =
+proc getTime*(js: JsonNode): DateTime =
   parseTime(js.getStr, "ddd MMM dd hh:mm:ss \'+0000\' yyyy", 30)
 
 proc getId*(id: string): string {.inline.} =
@@ -117,7 +119,7 @@ proc getBanner*(js: JsonNode): string =
   if color.len > 0:
     return '#' & color
 
-  # use primary color from profile picture color histrogram
+  # use primary color from profile picture color histogram
   with p, js{"profile_image_extensions", "mediaColor", "r", "ok", "palette"}:
     if p.len > 0:
       let pal = p[0]{"rgb"}
@@ -126,8 +128,6 @@ proc getBanner*(js: JsonNode): string =
       result.add toHex(pal{"green"}.getInt, 2)
       result.add toHex(pal{"blue"}.getInt, 2)
       return
-
-  return "#161616"
 
 proc getTombstone*(js: JsonNode): string =
   result = js{"tombstoneInfo", "richText", "text"}.getStr
@@ -194,13 +194,13 @@ proc deduplicate(s: var seq[ReplaceSlice]) =
 
 proc cmp(x, y: ReplaceSlice): int = cmp(x.slice.a, y.slice.b)
 
-proc expandProfileEntities*(profile: var Profile; js: JsonNode) =
+proc expandUserEntities*(user: var User; js: JsonNode) =
   let
-    orig = profile.bio.toRunes
+    orig = user.bio.toRunes
     ent = ? js{"entities"}
 
   with urls, ent{"url", "urls"}:
-    profile.website = urls[0]{"expanded_url"}.getStr
+    user.website = urls[0]{"expanded_url"}.getStr
 
   var replacements = newSeq[ReplaceSlice]()
 
@@ -211,9 +211,9 @@ proc expandProfileEntities*(profile: var Profile; js: JsonNode) =
   replacements.deduplicate
   replacements.sort(cmp)
 
-  profile.bio = orig.replacedWith(replacements, 0 .. orig.len)
-  profile.bio = profile.bio.replace(unRegex, unReplace)
-                           .replace(htRegex, htReplace)
+  user.bio = orig.replacedWith(replacements, 0 .. orig.len)
+  user.bio = user.bio.replacef(unRegex, unReplace)
+                     .replacef(htRegex, htReplace)
 
 proc expandTweetEntities*(tweet: Tweet; js: JsonNode) =
   let
@@ -273,3 +273,4 @@ proc expandTweetEntities*(tweet: Tweet; js: JsonNode) =
   replacements.sort(cmp)
 
   tweet.text = orig.replacedWith(replacements, textSlice)
+                   .strip(leading=false)

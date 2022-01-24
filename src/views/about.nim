@@ -1,22 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+import os, strformat
 import karax/[karaxdsl, vdom]
-import markdown
 
 const
-  hash = staticExec("git log -1 --format=\"%h\"")
+  date = staticExec("git show -s --format=\"%cd\" --date=format:\"%Y.%m.%d\"")
+  hash = staticExec("git show -s --format=\"%h\"")
   link = "https://github.com/zedeus/nitter/commit/" & hash
+  version = &"{date}-{hash}"
 
-let
-  about = markdown(readFile("public/md/about.md"))
-  feature = markdown(readFile("public/md/feature.md"))
+var aboutHtml: string
+
+proc initAboutPage*(dir: string) =
+  try:
+    aboutHtml = readFile(dir/"md/about.html")
+  except IOError:
+    stderr.write (dir/"md/about.html") & " not found, please run `nimble md`\n"
+    aboutHtml = "<h1>About page is missing</h1><br><br>"
 
 proc renderAbout*(): VNode =
   buildHtml(tdiv(class="overlay-panel")):
-    verbatim about
+    verbatim aboutHtml
     h2: text "Instance info"
     p:
-      text "Commit "
-      a(href=link): text hash
-
-proc renderFeature*(): VNode =
-  buildHtml(tdiv(class="overlay-panel")):
-    verbatim feature
+      text "Version "
+      a(href=link): text version

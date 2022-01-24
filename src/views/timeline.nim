@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import strutils, strformat, sequtils, algorithm, uri, options
 import karax/[karaxdsl, vdom]
 
@@ -25,7 +26,7 @@ proc renderNewer*(query: Query; path: string; focus=""): VNode =
 
 proc renderMore*(query: Query; cursor: string; focus=""): VNode =
   buildHtml(tdiv(class="show-more")):
-    a(href=(&"?{getQuery(query)}cursor={encodeUrl(cursor)}{focus}")):
+    a(href=(&"?{getQuery(query)}cursor={encodeUrl(cursor, usePlus=false)}{focus}")):
       text "Load more"
 
 proc renderNoMore(): VNode =
@@ -56,13 +57,13 @@ proc threadFilter(tweets: openArray[Tweet]; threads: openArray[int64]; it: Tweet
     elif t.replyId == result[0].id:
       result.add t
 
-proc renderUser(user: Profile; prefs: Prefs): VNode =
+proc renderUser(user: User; prefs: Prefs): VNode =
   buildHtml(tdiv(class="timeline-item")):
     a(class="tweet-link", href=("/" & user.username))
     tdiv(class="tweet-body profile-result"):
       tdiv(class="tweet-header"):
         a(class="tweet-avatar", href=("/" & user.username)):
-          genImg(user.getUserpic("_bigger"), class="avatar")
+          genImg(user.getUserPic("_bigger"), class=prefs.getAvatarClass)
 
         tdiv(class="tweet-name-row"):
           tdiv(class="fullname-and-username"):
@@ -70,9 +71,9 @@ proc renderUser(user: Profile; prefs: Prefs): VNode =
         linkUser(user, class="username")
 
       tdiv(class="tweet-content media-body", dir="auto"):
-        verbatim replaceUrl(user.bio, prefs)
+        verbatim replaceUrls(user.bio, prefs)
 
-proc renderTimelineUsers*(results: Result[Profile]; prefs: Prefs; path=""): VNode =
+proc renderTimelineUsers*(results: Result[User]; prefs: Prefs; path=""): VNode =
   buildHtml(tdiv(class="timeline")):
     if not results.beginning:
       renderNewer(results.query, path)
@@ -88,10 +89,15 @@ proc renderTimelineUsers*(results: Result[Profile]; prefs: Prefs; path=""): VNod
     else:
       renderNoMore()
 
-proc renderTimelineTweets*(results: Result[Tweet]; prefs: Prefs; path: string): VNode =
+proc renderTimelineTweets*(results: Result[Tweet]; prefs: Prefs; path: string;
+                           pinned=none(Tweet)): VNode =
   buildHtml(tdiv(class="timeline")):
     if not results.beginning:
       renderNewer(results.query, parseUri(path).path)
+
+    if pinned.isSome:
+      let tweet = get pinned
+      renderTweet(tweet, prefs, path, showThread=tweet.hasThread)
 
     if results.content.len == 0:
       if not results.beginning:

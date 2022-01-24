@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import times, sequtils, options, tables
 import prefs_impl
 
@@ -5,13 +6,29 @@ genPrefsType()
 
 type
   RateLimitError* = object of CatchableError
+  InternalError* = object of CatchableError
+
+  Api* {.pure.} = enum
+    userShow
+    timeline
+    search
+    tweet
+    list
+    listBySlug
+    listMembers
+    userRestId
+    status
+
+  RateLimit* = object
+    remaining*: int
+    reset*: int
 
   Token* = ref object
     tok*: string
-    remaining*: int
-    reset*: Time
     init*: Time
     lastUse*: Time
+    pending*: int
+    apis*: Table[Api, RateLimit]
 
   Error* = enum
     null = 0
@@ -24,29 +41,30 @@ type
     rateLimited = 88
     invalidToken = 89
     listIdOrSlug = 112
+    tweetNotFound = 144
     forbidden = 200
     badToken = 239
     noCsrf = 353
 
-  Profile* = object
+  User* = object
     id*: string
     username*: string
     fullname*: string
-    lowername*: string
     location*: string
     website*: string
     bio*: string
-    userpic*: string
+    userPic*: string
     banner*: string
-    following*: string
-    followers*: string
-    tweets*: string
-    likes*: string
-    media*: string
+    pinnedTweet*: int64
+    following*: int
+    followers*: int
+    tweets*: int
+    likes*: int
+    media*: int
     verified*: bool
     protected*: bool
     suspended*: bool
-    joinDate*: Time
+    joinDate*: DateTime
 
   VideoType* = enum
     m3u8 = "application/x-mpegURL"
@@ -54,12 +72,11 @@ type
     vmap = "video/vmap"
 
   VideoVariant* = object
-    videoType*: VideoType
+    contentType*: VideoType
     url*: string
     bitrate*: int
 
   Video* = object
-    videoId*: string
     durationMs*: int
     url*: string
     thumb*: string
@@ -126,11 +143,11 @@ type
     videoDirectMessage = "video_direct_message"
     imageDirectMessage = "image_direct_message"
     audiospace = "audiospace"
+    newsletterPublication = "newsletter_publication"
+    unknown
     
   Card* = object
     kind*: CardKind
-    id*: string
-    query*: string
     url*: string
     title*: string
     dest*: string
@@ -148,9 +165,9 @@ type
     id*: int64
     threadId*: int64
     replyId*: int64
-    profile*: Profile
+    user*: User
     text*: string
-    time*: Time
+    time*: DateTime
     reply*: seq[string]
     pinned*: bool
     hasThread*: bool
@@ -159,8 +176,8 @@ type
     location*: string
     stats*: TweetStats
     retweet*: Option[Tweet]
-    attribution*: Option[Profile]
-    mediaTags*: seq[Profile]
+    attribution*: Option[User]
+    mediaTags*: seq[User]
     quote*: Option[Tweet]
     card*: Option[Card]
     poll*: Option[Poll]
@@ -176,7 +193,7 @@ type
 
   Chain* = object
     content*: seq[Tweet]
-    more*: int64
+    hasMore*: bool
     cursor*: string
 
   Conversation* = ref object
@@ -186,6 +203,12 @@ type
     replies*: Result[Chain]
 
   Timeline* = Result[Tweet]
+
+  Profile* = object
+    user*: User
+    photoRail*: PhotoRail
+    pinned*: Option[Tweet]
+    tweets*: Timeline
 
   List* = object
     id*: string
@@ -198,7 +221,7 @@ type
 
   GlobalObjects* = ref object
     tweets*: Table[string, Tweet]
-    users*: Table[string, Profile]
+    users*: Table[string, User]
 
   Config* = ref object
     address*: string
@@ -212,6 +235,10 @@ type
     hmacKey*: string
     base64Media*: bool
     minTokens*: int
+    enableRss*: bool
+    enableDebug*: bool
+    proxy*: string
+    proxyAuth*: string
 
     rssCacheTime*: int
     listCacheTime*: int
@@ -221,8 +248,6 @@ type
     redisConns*: int
     redisMaxConns*: int
     redisPassword*: string
-
-    replaceYouTube*: string
 
   Rss* = object
     feed*, cursor*: string

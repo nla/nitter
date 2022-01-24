@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import asyncdispatch, strutils, sequtils, uri, options, times
 import jester, karax/vdom
 
@@ -18,67 +19,64 @@ proc getQuery*(request: Request; tab, name: string): Query =
   of "search": initQuery(params(request), name=name)
   else: Query(fromUser: @[name])
 
-proc fetchSingleTimeline*(after: string; query: Query; skipRail=false):
-                        Future[(Profile, Timeline, PhotoRail)] {.async.} =
-  let name = query.fromUser[0]
-
-  var
-    profile: Profile
-    profileId = await getProfileId(name)
-    fetched = false
-
-  if profileId.len == 0:
-    profile = await getCachedProfile(name)
-    profileId = if profile.suspended: "s"
-                else: profile.id
-
-    if profileId.len > 0:
-       await cacheProfileId(profile.username, profileId)
-
-    fetched = true
-
-  if profileId.len == 0 or profile.protected:
-    result[0] = profile
-    return
-  elif profileId == "s":
-    result[0] = Profile(username: name, suspended: true)
-    return
-
-  var rail: Future[PhotoRail]
-  if skipRail or query.kind == media:
-    rail = newFuture[PhotoRail]()
-    rail.complete(@[])
+template skipIf[T](cond: bool; default; body: Future[T]): Future[T] =
+  if cond:
+    let fut = newFuture[T]()
+    fut.complete(default)
+    fut
   else:
-    rail = getCachedPhotoRail(name)
+    body
 
-  var timeline =
-    case query.kind
-    of posts: await getTimeline(profileId, after)
-    of replies: await getTimeline(profileId, after, replies=true)
-    of media: await getMediaTimeline(profileId, after)
-    else: await getSearch[Tweet](query, after)
+proc fetchProfile*(after: string; query: Query; skipRail=false;
+                   skipPinned=false): Future[Profile] {.async.} =
+  let
+    name = query.fromUser[0]
+    userId = await getUserId(name)
 
-  timeline.query = query
+  if userId.len == 0:
+    return Profile(user: User(username: name))
+  elif userId == "suspended":
+    return Profile(user: User(username: name, suspended: true))
 
-  var found = false
-  for tweet in timeline.content.mitems:
-    if tweet.profile.id == profileId or
-       tweet.profile.username.cmpIgnoreCase(name) == 0:
-      profile = tweet.profile
-      found = true
-      break
+  # temporary fix to prevent errors from people browsing
+  # timelines during/immediately after deployment
+  var after = after
+  if query.kind in {posts, replies} and after.startsWith("scroll"):
+    after.setLen 0
 
-  if profile.username.len == 0:
-    profile = await getCachedProfile(name)
-    fetched = true
+  let
+    timeline =
+      case query.kind
+      of posts: getTimeline(userId, after)
+      of replies: getTimeline(userId, after, replies=true)
+      of media: getMediaTimeline(userId, after)
+      else: getSearch[Tweet](query, after)
 
-  if fetched and not found:
-    await cache(profile)
+    rail =
+      skipIf(skipRail or query.kind == media, @[]):
+        getCachedPhotoRail(name)
 
-  return (profile, timeline, await rail)
+    user = await getCachedUser(name)
 
-proc get*(req: Request; key: string): string =
-  params(req).getOrDefault(key)
+  var pinned: Option[Tweet]
+  if not skipPinned and user.pinnedTweet > 0 and
+     after.len == 0 and query.kind in {posts, replies}:
+    let tweet = await getCachedTweet(user.pinnedTweet)
+    if not tweet.isNil:
+      tweet.pinned = true
+      pinned = some tweet
+
+  result = Profile(
+    user: user,
+    pinned: pinned,
+    tweets: await timeline,
+    photoRail: await rail
+  )
+
+  if result.user.protected or result.user.suspended:
+    return
+
+  result.tweets.query = query
 
 proc showTimeline*(request: Request; query: Query; cfg: Config; prefs: Prefs;
                    rss, after: string): Future[string] {.async.} =
@@ -88,15 +86,18 @@ proc showTimeline*(request: Request; query: Query; cfg: Config; prefs: Prefs;
       html = renderTweetSearch(timeline, prefs, getPath())
     return renderMain(html, request, cfg, prefs, "Multi", rss=rss)
 
-  var (p, t, r) = await fetchSingleTimeline(after, query)
+  var profile = await fetchProfile(after, query)
+  template u: untyped = profile.user
 
-  if p.suspended: return showError(getSuspended(p.username), cfg)
-  if p.id.len == 0: return
+  if u.suspended:
+    return showError(getSuspended(u.username), cfg)
 
-  let pHtml = renderProfile(p, t, r, prefs, getPath())
-  result = renderMain(pHtml, request, cfg, prefs, pageTitle(p), pageDesc(p),
-                      rss=rss, images = @[p.getUserpic("_400x400")],
-                      banner=p.banner)
+  if profile.user.id.len == 0: return
+
+  let pHtml = renderProfile(profile, prefs, getPath())
+  result = renderMain(pHtml, request, cfg, prefs, pageTitle(u), pageDesc(u),
+                      rss=rss, images = @[u.getUserPic("_400x400")],
+                      banner=u.banner)
 
 template respTimeline*(timeline: typed) =
   let t = timeline
@@ -104,8 +105,22 @@ template respTimeline*(timeline: typed) =
     resp Http404, showError("User \"" & @"name" & "\" not found", cfg)
   resp t
 
+template respUserId*() =
+  cond @"user_id".len > 0
+  let username = await getCachedUsername(@"user_id")
+  if username.len > 0:
+    redirect("/" & username)
+  else:
+    resp Http404, showError("User not found", cfg)
+
 proc createTimelineRouter*(cfg: Config) =
   router timeline:
+    get "/i/user/@user_id":
+      respUserId()
+
+    get "/intent/user":
+      respUserId()
+
     get "/@name/?@tab?/?":
       cond '.' notin @"name"
       cond @"name" notin ["pic", "gif", "video"]
@@ -119,6 +134,7 @@ proc createTimelineRouter*(cfg: Config) =
       if names.len != 1:
         query.fromUser = names
 
+      # used for the infinite scroll feature
       if @"scroll".len > 0:
         if query.fromUser.len != 1:
           var timeline = await getSearch[Tweet](query, after)
@@ -126,15 +142,17 @@ proc createTimelineRouter*(cfg: Config) =
           timeline.beginning = true
           resp $renderTweetSearch(timeline, prefs, getPath())
         else:
-          var (_, timeline, _) = await fetchSingleTimeline(after, query, skipRail=true)
-          if timeline.content.len == 0: resp Http404
-          timeline.beginning = true
-          resp $renderTimelineTweets(timeline, prefs, getPath())
+          var profile = await fetchProfile(after, query, skipRail=true)
+          if profile.tweets.content.len == 0: resp Http404
+          profile.tweets.beginning = true
+          resp $renderTimelineTweets(profile.tweets, prefs, getPath())
 
-      var rss = "/$1/$2/rss" % [@"name", @"tab"]
-      if @"tab".len == 0:
-        rss = "/$1/rss" % @"name"
-      elif @"tab" == "search":
-        rss &= "?" & genQueryUrl(query)
+      let rss =
+        if @"tab".len == 0:
+          "/$1/rss" % @"name"
+        elif @"tab" == "search":
+          "/$1/search/rss?$2" % [@"name", genQueryUrl(query)]
+        else:
+          "/$1/$2/rss" % [@"name", @"tab"]
 
       respTimeline(await showTimeline(request, query, cfg, prefs, rss, after))

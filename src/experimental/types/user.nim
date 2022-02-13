@@ -1,3 +1,4 @@
+import options
 import common
 
 type
@@ -16,9 +17,11 @@ type
     mediaCount*: int
     verified*: bool
     protected*: bool
+    profileLinkColor*: string
     profileBannerUrl*: string
     profileImageUrlHttps*: string
-    profileLinkColor*: string
+    profileImageExtensions*: Option[ImageExtensions]
+    pinnedTweetIdsStr*: seq[string]
 
   Entities* = object
     url*: Urls
@@ -26,3 +29,15 @@ type
 
   Urls* = object
     urls*: seq[Url]
+
+  ImageExtensions = object
+    mediaColor*: tuple[r: Ok]
+
+  Ok = object
+    ok*: Palette
+
+  Palette = object
+    palette*: seq[tuple[rgb: Color]]
+
+  Color* = object
+    red*, green*, blue*: int

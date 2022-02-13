@@ -1,4 +1,4 @@
-import std/[algorithm, unicode, re, strutils]
+import std/[algorithm, unicode, re, strutils, strformat, options]
 import jsony
 import utils, slices
 import ../types/user as userType
@@ -34,8 +34,39 @@ proc expandUserEntities(user: var User; raw: RawUser) =
 proc getBanner(user: RawUser): string =
   if user.profileBannerUrl.len > 0:
     return user.profileBannerUrl & "/1500x500"
+
   if user.profileLinkColor.len > 0:
     return '#' & user.profileLinkColor
+
+  if user.profileImageExtensions.isSome:
+    let ext = get(user.profileImageExtensions)
+    if ext.mediaColor.r.ok.palette.len > 0:
+      let color = ext.mediaColor.r.ok.palette[0].rgb
+      return &"#{color.red:02x}{color.green:02x}{color.blue:02x}"
+
+proc toUser*(raw: RawUser): User =
+  result = User(
+    id: raw.idStr,
+    username: raw.screenName,
+    fullname: raw.name,
+    location: raw.location,
+    bio: raw.description,
+    following: raw.friendsCount,
+    followers: raw.followersCount,
+    tweets: raw.statusesCount,
+    likes: raw.favouritesCount,
+    media: raw.mediaCount,
+    verified: raw.verified,
+    protected: raw.protected,
+    joinDate: parseTwitterDate(raw.createdAt),
+    banner: getBanner(raw),
+    userPic: getImageUrl(raw.profileImageUrlHttps).replace("_normal", "")
+  )
+
+  if raw.pinnedTweetIdsStr.len > 0:
+    result.pinnedTweet = parseBiggestInt(raw.pinnedTweetIdsStr[0])
+
+  result.expandUserEntities(raw)
 
 proc parseUser*(json: string; username=""): User =
   handleErrors:
@@ -44,24 +75,4 @@ proc parseUser*(json: string; username=""): User =
     of userNotFound: return
     else: echo "[error - parseUser]: ", error
 
-  let user = json.fromJson(RawUser)
-
-  result = User(
-    id: user.idStr,
-    username: user.screenName,
-    fullname: user.name,
-    location: user.location,
-    bio: user.description,
-    following: user.friendsCount,
-    followers: user.followersCount,
-    tweets: user.statusesCount,
-    likes: user.favouritesCount,
-    media: user.mediaCount,
-    verified: user.verified,
-    protected: user.protected,
-    joinDate: parseTwitterDate(user.createdAt),
-    banner: getBanner(user),
-    userPic: getImageUrl(user.profileImageUrlHttps).replace("_normal", "")
-  )
-
-  result.expandUserEntities(user)
+  result = toUser json.fromJson(RawUser)

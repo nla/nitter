@@ -26,16 +26,6 @@ proc parseUser(js: JsonNode; id=""): User =
 
   result.expandUserEntities(js)
 
-proc parseGraphUser*(js: JsonNode; id: string): User =
-  if js.isNull: return
-
-  with user, js{"data", "user", "result", "legacy"}:
-    result = parseUser(user, id)
-
-    with pinned, user{"pinned_tweet_ids_str"}:
-      if pinned.kind == JArray and pinned.len > 0:
-        result.pinnedTweet = parseBiggestInt(pinned[0].getStr)
-
 proc parseGraphList*(js: JsonNode): List =
   if js.isNull: return
 
@@ -54,25 +44,6 @@ proc parseGraphList*(js: JsonNode): List =
     members: list{"member_count"}.getInt,
     banner: list{"custom_banner_media", "media_info", "url"}.getImageStr
   )
-
-proc parseGraphListMembers*(js: JsonNode; cursor: string): Result[User] =
-  result = Result[User](
-    beginning: cursor.len == 0,
-    query: Query(kind: userList)
-  )
-
-  if js.isNull: return
-
-  let root = js{"data", "list", "members_timeline", "timeline", "instructions"}
-  for instruction in root:
-    if instruction{"type"}.getStr == "TimelineAddEntries":
-      for entry in instruction{"entries"}:
-        let content = entry{"content"}
-        if content{"entryType"}.getStr == "TimelineTimelineItem":
-          with legacy, content{"itemContent", "user_results", "result", "legacy"}:
-            result.content.add parseUser(legacy)
-        elif content{"cursorType"}.getStr == "Bottom":
-          result.bottom = content{"value"}.getStr
 
 
 proc parsePoll(js: JsonNode): Poll =
@@ -395,26 +366,6 @@ proc parseInstructions[T](res: var Result[T]; global: GlobalObjects; js: JsonNod
       elif "bottom" in r{"entryId"}.getStr:
         res.bottom = r.getCursor
 
-proc parseUsers*(js: JsonNode; after=""): Result[User] =
-  result = Result[User](beginning: after.len == 0)
-  let global = parseGlobalObjects(? js)
-
-  let instructions = ? js{"timeline", "instructions"}
-  if instructions.len == 0: return
-
-  result.parseInstructions(global, instructions)
-
-  for e in instructions[0]{"addEntries", "entries"}:
-    let entry = e{"entryId"}.getStr
-    if "user-" in entry:
-      let id = entry.getId
-      if id in global.users:
-        result.content.add global.users[id]
-    elif "cursor-top" in entry:
-      result.top = e.getCursor
-    elif "cursor-bottom" in entry:
-      result.bottom = e.getCursor
-
 proc parseTimeline*(js: JsonNode; after=""): Timeline =
   result = Timeline(beginning: after.len == 0)
   let global = parseGlobalObjects(? js)
@@ -424,7 +375,12 @@ proc parseTimeline*(js: JsonNode; after=""): Timeline =
 
   result.parseInstructions(global, instructions)
 
-  for e in instructions[0]{"addEntries", "entries"}:
+  var entries: JsonNode
+  for i in instructions:
+    if "addEntries" in i:
+      entries = i{"addEntries", "entries"}
+
+  for e in ? entries:
     let entry = e{"entryId"}.getStr
     if "tweet" in entry or entry.startsWith("sq-I-t") or "tombstone" in entry:
       let tweet = finalizeTweet(global, e.getEntryId)

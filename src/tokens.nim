@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 import asyncdispatch, httpclient, times, sequtils, json, random
 import strutils, tables
-import zippy
-import types, consts, http_pool
+import types, consts
 
 const
   maxConcurrentReqs = 5  # max requests at a time per token, to avoid race conditions
@@ -11,9 +10,14 @@ const
   failDelay = initDuration(minutes=30)
 
 var
-  clientPool: HttpPool
   tokenPool: seq[Token]
   lastFailed: Time
+  enableLogging = false
+
+let headers = newHttpHeaders({"authorization": auth})
+
+template log(str) =
+  if enableLogging: echo "[tokens] ", str
 
 proc getPoolJson*(): JsonNode =
   var
@@ -37,9 +41,12 @@ proc getPoolJson*(): JsonNode =
       let
         maxReqs =
           case api
-          of Api.listMembers, Api.listBySlug, Api.list, Api.userRestId: 500
           of Api.timeline: 187
-          else: 180
+          of Api.listMembers, Api.listBySlug, Api.list, Api.listTweets,
+             Api.userTweets, Api.userTweetsAndReplies, Api.userMedia,
+             Api.userRestId, Api.userScreenName,
+             Api.tweetDetail, Api.tweetResult, Api.search: 500
+          of Api.userSearch: 900
         reqs = maxReqs - token.apis[api].remaining
 
       reqsPerApi[$api] = reqsPerApi.getOrDefault($api, 0) + reqs
@@ -60,25 +67,23 @@ proc fetchToken(): Future[Token] {.async.} =
   if getTime() - lastFailed < failDelay:
     raise rateLimitError()
 
-  let headers = newHttpHeaders({
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "accept-encoding": "gzip",
-    "accept-language": "en-US,en;q=0.5",
-    "connection": "keep-alive",
-    "authorization": auth
-  })
+  let client = newAsyncHttpClient(headers=headers)
 
   try:
     let
-      resp = clientPool.use(headers): await c.postContent(activate)
-      tokNode = parseJson(uncompress(resp))["guest_token"]
+      resp = await client.postContent(activate)
+      tokNode = parseJson(resp)["guest_token"]
       tok = tokNode.getStr($(tokNode.getInt))
       time = getTime()
 
     return Token(tok: tok, init: time, lastUse: time)
   except Exception as e:
-    lastFailed = getTime()
-    echo "fetching token failed: ", e.msg
+    echo "[tokens] fetching token failed: ", e.msg
+    if "Try again" notin e.msg:
+      echo "[tokens] fetching tokens paused, resuming in 30 minutes"
+      lastFailed = getTime()
+  finally:
+    client.close()
 
 proc expired(token: Token): bool =
   let time = getTime()
@@ -100,6 +105,9 @@ proc isReady(token: Token; api: Api): bool =
 proc release*(token: Token; used=false; invalid=false) =
   if token.isNil: return
   if invalid or token.expired:
+    if invalid: log "discarding invalid token"
+    elif token.expired: log "discarding expired token"
+
     let idx = tokenPool.find(token)
     if idx > -1: tokenPool.delete(idx)
   elif used:
@@ -115,6 +123,7 @@ proc getToken*(api: Api): Future[Token] {.async.} =
   if not result.isReady(api):
     release(result)
     result = await fetchToken()
+    log "added new token to pool"
     tokenPool.add result
 
   if not result.isNil:
@@ -143,10 +152,11 @@ proc poolTokens*(amount: int) {.async.} =
     except: discard
 
     if not newToken.isNil:
+      log "added new token to pool"
       tokenPool.add newToken
 
 proc initTokenPool*(cfg: Config) {.async.} =
-  clientPool = HttpPool()
+  enableLogging = cfg.enableDebug
 
   while true:
     if tokenPool.countIt(not it.isLimited(Api.timeline)) < cfg.minTokens:

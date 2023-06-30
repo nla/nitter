@@ -1,14 +1,14 @@
-import std/[algorithm, unicode, re, strutils, strformat, options]
+import std/[algorithm, unicode, re, strutils, strformat, options, nre]
 import jsony
 import utils, slices
 import ../types/user as userType
-from ../../types import User, Error
+from ../../types import Result, User, Error
 
 let
-  unRegex = re"(^|[^A-z0-9-_./?])@([A-z0-9_]{1,15})"
+  unRegex = re.re"(^|[^A-z0-9-_./?])@([A-z0-9_]{1,15})"
   unReplace = "$1<a href=\"/$2\">@$2</a>"
 
-  htRegex = re"(^|[^\w-_./?])([#＃$])([\w_]+)"
+  htRegex = nre.re"""(*U)(^|[^\w-_.?])([#＃$])([\w_]*+)(?!</a>|">|#)"""
   htReplace = "$1<a href=\"/search?q=%23$3\">$2$3</a>"
 
 proc expandUserEntities(user: var User; raw: RawUser) =
@@ -29,7 +29,7 @@ proc expandUserEntities(user: var User; raw: RawUser) =
 
   user.bio = orig.replacedWith(replacements, 0 .. orig.len)
                  .replacef(unRegex, unReplace)
-                 .replacef(htRegex, htReplace)
+                 .replace(htRegex, htReplace)
 
 proc getBanner(user: RawUser): string =
   if user.profileBannerUrl.len > 0:
@@ -76,3 +76,12 @@ proc parseUser*(json: string; username=""): User =
     else: echo "[error - parseUser]: ", error
 
   result = toUser json.fromJson(RawUser)
+
+proc parseUsers*(json: string; after=""): Result[User] =
+  result = Result[User](beginning: after.len == 0)
+
+  # starting with '{' means it's an error
+  if json[0] == '[':
+    let raw = json.fromJson(seq[RawUser])
+    for user in raw:
+      result.content.add user.toUser

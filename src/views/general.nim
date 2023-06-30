@@ -97,14 +97,13 @@ proc renderHead*(prefs: Prefs; cfg: Config; req: Request; titleText=""; desc="";
     meta(property="og:site_name", content="Nitter")
     meta(property="og:locale", content="en_US")
 
-    if banner.len > 0:
+    if banner.len > 0 and not banner.startsWith('#'):
       let bannerUrl = getPicUrl(banner)
       link(rel="preload", type="image/png", href=bannerUrl, `as`="image")
 
     for url in images:
-      let suffix = if "400x400" in url or url.endsWith("placeholder.png"): ""
-                   else: "?name=small"
-      let preloadUrl = getPicUrl(url & suffix)
+      let preloadUrl = if "400x400" in url: getPicUrl(url)
+                       else: getSmallPic(url)
       link(rel="preload", type="image/png", href=preloadUrl, `as`="image")
 
       let image = getUrlPrefix(cfg) & getPicUrl(url)
